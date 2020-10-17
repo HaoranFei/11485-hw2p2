@@ -133,13 +133,18 @@ def test(net, test_dataloader):
 
 
 # length of lr_schedule, if not none must equal to epoch
-def train(net, train_dataloader, val_dataloader, batchsize=200, epoch=5, lr=0.15, lr_decay=0.85):
+def train(net, train_dataloader, val_dataloader, checkpoint=None, batchsize=200, epoch=5, lr=0.15, lr_decay=0.85):
     loss = nn.CrossEntropyLoss()
     net.train()
+    net.to(device)
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=0.9, weight_decay=5e-5)
     lmbda = lambda epoch: lr_decay
     scheduler = optim.lr_scheduler.MultiplicativeLR(optimizer, lr_lambda=lmbda)
-    start_time = time.time()
+    if checkpoint is not None:
+        net.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+    start_time = time.time()    
 
     for i in range(epoch):
         cur_time = time.time()
@@ -165,24 +170,30 @@ def train(net, train_dataloader, val_dataloader, batchsize=200, epoch=5, lr=0.15
         net.train()    
         scheduler.step()
         print("At Epoch {}. Average Loss is {}. Accuracy is {}".format(i, total_loss / counter, num_correct / num_total))
-        torch.save(net.state_dict(), "./weights/epoch_{}.pt".format(i))
+        torch.save({"model_state_dict": net.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "scheduler_state_dict": scheduler.state_dict()}, "./checkpoints/epoch_{}.pth".format(i))
 
 if __name__ == "__main__":
     train_dataloader, num_classes = load_training_data()
     val_dataloader = load_validation_data()
     test_dataloader = load_test_data()
     net = MyNetwork(num_classes).network
-    net.load_state_dict(torch.load("./weights/archives/40_epoch.pt"))
-    net.to(device)
     print(net)
-    #train(net, train_dataloader, val_dataloader, epoch=20, lr_decay=0.9)
-    #test(net, test_dataloader)
+    checkpoint = torch.load("./checkpoints/archives/epoch_46.pth", map_location=device)
+    do_training = True
+    if do_training:
+        train(net, train_dataloader, val_dataloader, checkpoint=checkpoint, epoch=5, lr_decay=0.9)
+    else:
+        net.load_state_dict(torch.load("./weights/archives/40_epoch.pt"))
+        net.to(device)
+    test(net, test_dataloader)
 
     veri_val_dataloader = load_verification_validation_data();
-    veri_test_dataloader = load_verification_test_data();
+    #veri_test_dataloader = load_verification_test_data();
     net_feature_extractor = nn.Sequential(*list(net.children())[:-1])
     verify_val_set(net_feature_extractor, veri_val_dataloader)
-    verify_test_set(net_feature_extractor, veri_test_dataloader)
+    #verify_test_set(net_feature_extractor, veri_test_dataloader)
 
     
 
